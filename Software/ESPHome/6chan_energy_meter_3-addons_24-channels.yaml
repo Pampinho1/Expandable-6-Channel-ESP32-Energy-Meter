@@ -1,0 +1,1018 @@
+# ========================================================================================
+# CircuitSetup 6-Ch Energy Meter Main Board with 3 add-on boards - 24 current channels
+# ----------------------------------------------------------------------------------------
+# To reduce the number of sensors, only the power sensor for ea current channel is output.
+# 
+# current_cal: is set to a 100A/50ma CT for all inputs.
+# This can easily be changed per input depending on what CTs are being used on the 
+# corresponding CT inputs.
+# ----------------------------------------------------------------------------------------
+# 	Current Transformers:
+#  		20A/25mA SCT-006: 11143	      /   30A/1V SCT-013-030: 8650
+#  		50A/1V SCT-013-050: 15420	    /	  50A/16.6mA SCT-010: 41334
+#  		80A/26.6mA SCT-010: 41660	    /	  100A/50ma SCT-013-000: 27518
+#  		120A/40mA: SCT-016: 41787	    /	  200A/100mA SCT-024: 27518
+#  		200A/50mA SCT-024: 55036
+# ------------------------------
+# 	Jameco 9VAC Transformer:
+#  	  For meter versions >= v1.3:      7305
+#     For meter versions <= v1.2:     42620
+# ========================================================================================
+
+# https://esphome.io/guides/configuration-types.html#substitutions
+substitutions:
+  device_name: 'cs-energy-meter'    # Only lowercase chars, digits and dashes. 24char max.
+  base_id: 'cs_energy_meter'        # Must use underscores
+  disp_name: 'CS Energy Meter'      # Change the disp_name to something you want
+  friendly_name: 'CS Energy Meter'  # Change the friendly_name to something you want
+  update_time: 15s                  # Interval of how often the power is updated
+  #------------------------------
+  current_cal_20a: '11143'      #  20A/25mA SCT-006 CT Clamp | was '11143'
+  #------------------------------
+  current_cal_100a: '28235'     # 100A/50ma SCT-013 CT Clamp | was '27518'
+  #------------------------------
+  voltage_cal: '7484'           # Jameco 9vac Transf #157041 on board 1.4.1 | was '7305'
+
+
+#esphome:
+#  name: "${device_name}"
+#  build_path: "./builds/${device_name}"
+#  friendly_name: "${disp_name}"
+#  project:
+#    name: circuitsetup.6c-energy-meter-main
+#    version: "1.4.1"
+#  platformio_options:
+#    build_flags: 
+#      - -DCONFIG_ARDUINO_LOOP_STACK_SIZE=32768
+#
+#esp32:
+#  #board: esp32dev
+#  board: nodemcu-32s
+#  framework:
+#    type: arduino
+#
+#dashboard_import:
+#  package_import_url: github://circuitsetup/Expandable-6-Channel-ESP32-Energy-Meter/Software/ESPHome/6chan_energy_meter_main_board.yaml@master
+#  import_full_config: true
+
+esphome:
+  name: "${device_name}"
+  platformio_options:
+    build_flags: 
+      - -DCONFIG_ARDUINO_LOOP_STACK_SIZE=32768
+
+esp32:
+  board: nodemcu-32s
+  variant: esp32
+  framework:
+    type: arduino
+    version: 2.0.2
+    source: https://github.com/espressif/arduino-esp32.git#2.0.2
+    platform_version: https://github.com/platformio/platform-espressif32.git#feature/arduino-upstream
+
+#------------------------------
+# Sets up Bluetooth LE to allow the user to provision wifi credentials to the device.
+esp32_improv:
+  authorizer: none
+
+#------------------------------
+packages:
+  api: !include common/packages/api.yaml
+  captive_portal: !include common/packages/captive_portal.yaml
+  logger: !include common/packages/logger.yaml
+  ota: !include common/packages/ota.yaml
+#  time: !include common/packages/time.yaml
+  web_server: !include common/packages/web_server.yaml
+  wifi: !include common/packages/wifi.yaml  
+
+#------------------------------
+#mqtt:
+#  broker: !secret mqtt_broker
+#  username: !secret mqtt_user
+#  password: !secret mqtt_pass
+
+#------------------------------
+spi:
+  clk_pin: 18
+  miso_pin: 19
+  mosi_pin: 23
+  
+#------------------------------
+sensor:
+  #- <<: !include common/sensor/uptime.config.yaml
+  - platform: uptime
+    name: "${friendly_name} Uptime"
+    id: ${base_id}_uptime                 # Must use underscore
+    filters:
+      - lambda: return x / 3600;
+    unit_of_measurement: "hours"
+    accuracy_decimals: 1
+
+  #- <<: !include common/sensor/wifi_signal.config.yaml
+  - platform: wifi_signal
+    name: "${friendly_name} WiFi Signal"
+    id: ${base_id}_wifi_signal                 # Must use underscore
+    state_class: "measurement"
+    filters:
+      - sliding_window_moving_average:
+          window_size: 15
+          send_every: 10
+          send_first_at: 1
+    update_interval: 15s
+
+#====================================================================
+# 			Main Board
+#====================================================================
+  - platform: atm90e32
+    cs_pin: 5
+    #---------- (IC1) CT1 ----------# 100A CT
+    phase_a:
+      voltage:
+        name: "${friendly_name} Mains Volts A"
+        id: ic1Volts
+        accuracy_decimals: 1
+        icon: "mdi:flash-triangle-outline"
+        device_class: "voltage"
+        state_class: "measurement"
+      current:
+        name: "${friendly_name} CT01 Amps"
+        id: ct01Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT01 Peak Current"
+        id: ct01PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT01 Watts"
+        id: ct01Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #---------- (IC1) CT2 ----------# 100A CT
+    phase_b:
+      current:
+        name: "${friendly_name} CT02 Amps"
+        id: ct02Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT02 Peak Current"
+        id: ct02PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT02 Watts"
+        id: ct02Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #---------- (IC1) CT3 ----------#  20A CT
+    phase_c:
+      current:
+        name: "${friendly_name} CT03 Amps"
+        id: ct03Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT03 Peak Current"
+        id: ct03PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT03 Watts"
+        id: ct03Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}
+    #
+    frequency:
+      name: "${friendly_name} Mains Freq A"
+      id: ic1Freq
+      icon: "mdi:sine-wave"
+      device_class: "frequency"
+      state_class: "measurement"
+    #
+    line_frequency: 60Hz
+    gain_pga: 1X
+    update_interval: ${update_time}
+#======================================== IC2
+  - platform: atm90e32
+    cs_pin: 4
+    #---------- (IC2) CT4 ----------#  100A CT
+    phase_a:
+      voltage:
+        name: "${friendly_name} Mains Volts B"
+        id: ic2Volts
+        accuracy_decimals: 1
+        icon: "mdi:flash-triangle-outline"
+        device_class: "voltage"
+        state_class: "measurement"      
+      current:
+        name: "${friendly_name} CT04 Amps"
+        id: ct04Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT04 Peak Current"
+        id: ct04PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT04 Watts"
+        id: ct04Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #---------- (IC2) CT5 ----------#  20A CT
+    phase_b:
+      current:
+        name: "${friendly_name} CT05 Amps"
+        id: ct05Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT05 Peak Current"
+        id: ct05PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT05 Watts"
+        id: ct05Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}
+    #---------- (IC2) CT6 ----------#  100A CT
+    phase_c:
+      current:
+        name: "${friendly_name} CT06 Amps"
+        id: ct06Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT06 Peak Current"
+        id: ct06PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT06 Watts"
+        id: ct06Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #
+    frequency:
+      name: "${friendly_name} Mains Freq B"
+      id: ic2Freq
+      icon: "mdi:sine-wave"
+      device_class: "frequency"
+      state_class: "measurement"
+    #
+    line_frequency: 60Hz
+    gain_pga: 1X
+    update_interval: ${update_time}
+      
+#==============================
+# 			AddOn 1 Board
+#==============================
+  - platform: atm90e32
+    cs_pin: 0
+    #---------- (IC1) CT7 ----------#  20A CT
+    phase_a:
+      current:
+        name: "${friendly_name} CT07 Amps"
+        id: ct07Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT07 Peak Current"
+        id: ct07PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT07 Watts"
+        id: ct07Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}
+    #---------- (IC1) CT8 ----------#  100A CT
+    phase_b:
+      current:
+        name: "${friendly_name} CT08 Amps"
+        id: ct08Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT08 Peak Current"
+        id: ct08PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT08 Watts"
+        id: ct08Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #---------- (IC1) CT9 ----------#  100A CT
+    phase_c:
+      current:
+        name: "${friendly_name} CT09 Amps"
+        id: ct09Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT09 Peak Current"
+        id: ct09PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT09 Watts"
+        id: ct09Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #
+    line_frequency: 60Hz
+    gain_pga: 1X
+    update_interval: ${update_time}
+  #==================================
+  - platform: atm90e32
+    cs_pin: 16
+    #---------- (IC2) CT10 ----------#  100A CT
+    phase_a:
+      current:
+        name: "${friendly_name} CT10 Amps"
+        id: ct10Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT10 Peak Current"
+        id: ct10PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT10 Watts"
+        id: ct10Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #---------- (IC2) CT11 ----------#  100A CT
+    phase_b:
+      current:
+        name: "${friendly_name} CT11 Amps"
+        id: ct11Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT11 Peak Current"
+        id: ct11PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT11 Watts"
+        id: ct11Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #---------- (IC2) CT12 ----------#  100A CT
+    phase_c:
+      current:
+        name: "${friendly_name} CT12 Amps"
+        id: ct12Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT12 Peak Current"
+        id: ct12PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT12 Watts"
+        id: ct12Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #
+    line_frequency: 60Hz
+    gain_pga: 1X
+    update_interval: ${update_time}
+
+#==============================
+# 			AddOn 2 Board
+#==============================
+  - platform: atm90e32
+    cs_pin: 27
+    #---------- (IC1) CT13 ----------#  100A CT
+    phase_a:
+      current:
+        name: "${friendly_name} CT13 Amps"
+        id: ct13Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT13 Peak Current"
+        id: ct13PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT13 Watts"
+        id: ct13Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #---------- (IC1) CT14 ----------#  20A CT
+    phase_b:
+      current:
+        name: "${friendly_name} CT14 Amps"
+        id: ct14Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT14 Peak Current"
+        id: ct14PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT14 Watts"
+        id: ct14Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}
+    #---------- (IC1) CT15 ----------#  20A CT
+    phase_c:
+      current:
+        name: "${friendly_name} CT15 Amps"
+        id: ct15Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT15 Peak Current"
+        id: ct15PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT15 Watts"
+        id: ct15Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}
+    #
+    line_frequency: 60Hz
+    gain_pga: 1X
+    update_interval: ${update_time}
+  #==================================
+  - platform: atm90e32
+    cs_pin: 17
+    #---------- (IC2) CT16 ----------#  100A CT
+    phase_a:
+      current:
+        name: "${friendly_name} CT16 Amps"
+        id: ct16Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT16 Peak Current"
+        id: ct16PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT16 Watts"
+        id: ct16Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}
+    #---------- (IC2) CT17 ----------#  20A CT
+    phase_b:
+      current:
+        name: "${friendly_name} CT17 Amps"
+        id: ct17Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT17 Peak Current"
+        id: ct17PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT17 Watts"
+        id: ct17Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}
+    #---------- (IC2) CT18 ----------#  20A CT
+    phase_c:
+      current:
+        name: "${friendly_name} CT18 Amps"
+        id: ct18Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT18 Peak Current"
+        id: ct18PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT18 Watts"
+        id: ct18Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}
+    #
+    line_frequency: 60Hz
+    gain_pga: 1X
+    update_interval: ${update_time}
+
+#==============================
+# 			AddOn 3 Board
+#==============================
+  - platform: atm90e32
+    cs_pin: 13                ## Add CS ping before deploying
+    #---------- (IC1) CT19 ----------#
+    phase_a:
+      current:
+        name: "${friendly_name} CT19 Amps"
+        id: ct19Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT19 Peak Current"
+        id: ct19PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT19 Watts"
+        id: ct19Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}             # 20A CT
+    #---------- (IC1) CT20 ----------#
+    phase_b:
+      current:
+        name: "${friendly_name} CT20 Amps"
+        id: ct20Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT20 Peak Current"
+        id: ct20PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT20 Watts"
+        id: ct20Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}             # 20A CT
+    #---------- (IC1) CT21 ----------#
+    phase_c:
+      current:
+        name: "${friendly_name} CT21 Amps"
+        id: ct21Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT21 Peak Current"
+        id: ct21PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT21 Watts"
+        id: ct21Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}             # 20A CT
+    #
+    line_frequency: 60Hz
+    gain_pga: 1X
+    update_interval: ${update_time}
+  #==================================
+  - platform: atm90e32
+    cs_pin: 22                    ## Add CS ping before deploying
+    #---------- (IC2) CT22 ----------#
+    phase_a:
+      current:
+        name: "${friendly_name} CT22 Amps"
+        id: ct22Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT22 Peak Current"
+        id: ct22PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT22 Watts"
+        id: ct22Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}             # 20A CT
+    #---------- (IC2) CT23 ----------#
+    phase_b:
+      current:
+        name: "${friendly_name} CT23 Amps"
+        id: ct23Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT23 Peak Current"
+        id: ct23PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT23 Watts"
+        id: ct23Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_100a}            # 100A CT (This is a combined clamp)
+    #---------- (IC2) CT24 ----------#
+    phase_c:
+      current:
+        name: "${friendly_name} CT24 Amps"
+        id: ct24Amps
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      peak_current:
+        name: "${friendly_name} CT24 Peak Current"
+        id: ct24PeakCurrent
+        accuracy_decimals: 1
+        icon: "mdi:current-ac"
+        device_class: "current"
+        state_class: "measurement"
+      power:
+        name: "${friendly_name} CT24 Watts"
+        id: ct24Watts
+        accuracy_decimals: 1
+        device_class: "power"
+        unit_of_measurement: W
+        state_class: "measurement"
+        icon: "mdi:lightning-bolt-outline"
+      #
+      gain_voltage: ${voltage_cal}
+      gain_ct: ${current_cal_20a}             # 20A CT
+    #
+    line_frequency: 60Hz
+    gain_pga: 1X
+    update_interval: ${update_time}
+
+#---------------------------------#
+###  Aggregate Power Templates  ###
+#---------------------------------#
+
+#Total Watts Main Board
+  - platform: template
+    name: "${friendly_name} Total Watts Main Board"
+    id: totalWattsMain
+    lambda: return id(ct01Watts).state + id(ct02Watts).state + id(ct03Watts).state + id(ct04Watts).state + id(ct05Watts).state + id(ct06Watts).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: W
+    device_class: power
+    state_class: "measurement"
+    icon: "mdi:lightning-bolt-circle"
+    update_interval: ${update_time}
+    
+#Total Watts AddOn1
+  - platform: template
+    name: "${friendly_name} Total Watts Add-on1 Board"
+    id: totalWattsAddOn1
+    lambda: return id(ct07Watts).state + id(ct08Watts).state + id(ct09Watts).state + id(ct10Watts).state + id(ct11Watts).state + id(ct12Watts).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: W
+    device_class: power
+    state_class: "measurement"
+    icon: "mdi:lightning-bolt-circle"
+    update_interval: ${update_time}
+    
+#Total Watts AddOn2
+  - platform: template
+    name: "${friendly_name} Total Watts Add-on2 Board"
+    id: totalWattsAddOn2
+    lambda: return id(ct13Watts).state + id(ct14Watts).state + id(ct15Watts).state + id(ct16Watts).state + id(ct17Watts).state + id(ct18Watts).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: W
+    device_class: power
+    state_class: "measurement"
+    icon: "mdi:lightning-bolt-circle"
+    update_interval: ${update_time}
+    
+#Total Watts AddOn3
+  - platform: template
+    name: "${friendly_name} Total Watts Add-on3 Board"
+    id: totalWattsAddOn3
+    lambda: return id(ct19Watts).state + id(ct20Watts).state + id(ct21Watts).state + id(ct22Watts).state + id(ct23Watts).state + id(ct24Watts).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: W
+    device_class: power
+    state_class: "measurement"
+    icon: "mdi:lightning-bolt-circle"
+    update_interval: ${update_time}
+    
+#Total Watts Whole House
+  - platform: template
+    name: "${friendly_name} House Total Watts"
+    id: totalWatts
+    lambda: return id(totalWattsMain).state + id(totalWattsAddOn1).state + id(totalWattsAddOn2).state + id(totalWattsAddOn3).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: W
+    device_class: power
+    state_class: "measurement"
+    icon: "mdi:lightning-bolt-circle"
+    update_interval: ${update_time}
+    
+#kWh - Total Daily Whole House Power Usage
+  - platform: total_daily_energy
+    name: "${friendly_name} House Total kWh"
+    power_id: totalWatts
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: kWh
+    device_class: energy
+    icon: "mdi:home-lightning-bolt-outline"
+    state_class: total_increasing
+
+#---------------------------------#
+### Aggregate Current Templates ###
+#---------------------------------#
+
+#Total Amps Main Board
+  - platform: template
+    name: "${friendly_name} Total Amps Main Board"
+    id: totalAmpsMain
+    lambda: return id(ct01Amps).state + id(ct02Amps).state + id(ct03Amps).state + id(ct04Amps).state + id(ct05Amps).state + id(ct06Amps).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: A
+    device_class: current
+    state_class: "measurement"
+    icon: "mdi:current-ac"
+    update_interval: ${update_time}
+    
+#Total Amps AddOn-1
+  - platform: template
+    name: "${friendly_name} Total Amps AddOn1"
+    id: totalAmpsAddOn1
+    lambda: return id(ct07Amps).state + id(ct08Amps).state + id(ct09Amps).state + id(ct10Amps).state + id(ct11Amps).state + id(ct12Amps).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: A
+    device_class: current
+    state_class: "measurement"
+    icon: "mdi:current-ac"
+    update_interval: ${update_time}
+    
+#Total Amps AddOn-2
+  - platform: template
+    name: "${friendly_name} Total Amps AddOn2"
+    id: totalAmpsAddOn2
+    lambda: return id(ct13Amps).state + id(ct14Amps).state + id(ct15Amps).state + id(ct16Amps).state + id(ct17Amps).state + id(ct18Amps).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: A
+    device_class: current
+    state_class: "measurement"
+    icon: "mdi:current-ac"
+    update_interval: ${update_time}
+    
+#Total Amps AddOn-3
+  - platform: template
+    name: "${friendly_name} Total Amps AddOn3"
+    id: totalAmpsAddOn3
+    lambda: return id(ct19Amps).state + id(ct20Amps).state + id(ct21Amps).state + id(ct22Amps).state + id(ct23Amps).state + id(ct24Amps).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: A
+    device_class: current
+    state_class: "measurement"
+    icon: "mdi:current-ac"
+    update_interval: ${update_time}
+    
+#Total Amps Whole House
+  - platform: template
+    name: "${friendly_name} Total Amps Whole House"
+    id: totalAmps
+    lambda: return id(totalAmpsMain).state + id(totalAmpsAddOn1).state + id(totalAmpsAddOn2).state + id(totalAmpsAddOn3).state ;
+    accuracy_decimals: 1
+    unit_of_measurement: A
+    device_class: current
+    state_class: "measurement"
+    icon: "mdi:current-ac"
+    update_interval: ${update_time}
+
+#switch:
+#  - <<: !include common/switch/restart_switch.config.yaml
+
+switch:
+  - platform: restart
+    name: "${friendly_name} Restart"
+    id: ${base_id}_restart
+    icon: "mdi:restart"
+    #name: Restart
+
+time:
+  - platform: sntp
+    id: sntp_time
