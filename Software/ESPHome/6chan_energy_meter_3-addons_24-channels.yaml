@@ -1,62 +1,47 @@
 # ========================================================================================
 # CircuitSetup 6-Ch Energy Meter Main Board with 3 add-on boards - 24 current channels
 # ----------------------------------------------------------------------------------------
-# To reduce the number of sensors, only the power sensor for ea current channel is output.
-# 
-# current_cal: is set to a 100A/50ma CT for all inputs.
+# Use the following to set the value of 'current_cal:' According to the CT clamp used.
 # This can easily be changed per input depending on what CTs are being used on the 
 # corresponding CT inputs.
 # ----------------------------------------------------------------------------------------
-# 	Current Transformers:
-#  		20A/25mA SCT-006: 11143	      /   30A/1V SCT-013-030: 8650
-#  		50A/1V SCT-013-050: 15420	    /	  50A/16.6mA SCT-010: 41334
-#  		80A/26.6mA SCT-010: 41660	    /	  100A/50ma SCT-013-000: 27518
-#  		120A/40mA: SCT-016: 41787	    /	  200A/100mA SCT-024: 27518
-#  		200A/50mA SCT-024: 55036
+# Current Transformers:
+#    20A/25mA    - SCT-006: 11143
+#    30A/1V      - SCT-013-030: 8650
+#    50A/1V      - SCT-013-050: 15420
+#    50A/16.6mA  - SCT-010: 41334
+#    80A/26.6mA  - SCT-010: 41660
+#   100A/50ma    - SCT-013-000: 27518
+#   120A/40mA    - SCT-016: 41787
+#   200A/100mA   - SCT-024: 27518
+#   200A/50mA    - SCT-024: 55036
 # ------------------------------
-# 	Jameco 9VAC Transformer:
-#  	  For meter versions >= v1.3:      7305
-#     For meter versions <= v1.2:     42620
+# Jameco 9VAC Transformer:
+#   For CS meter versions >= v1.3:      7305 *
+#   For CS meter versions <= v1.2:     42620
 # ========================================================================================
 
 # https://esphome.io/guides/configuration-types.html#substitutions
 substitutions:
-  device_name: 'cs-energy-meter'    # Only lowercase chars, digits and dashes. 24char max.
+  device_name: 'cs-energy-meter'    # Lowercase chars, digits and dashes. 24char max.
   base_id: 'cs_energy_meter'        # Must use underscores
-  disp_name: 'CS Energy Meter'      # Change the disp_name to something you want
   friendly_name: 'CS Energy Meter'  # Change the friendly_name to something you want
   update_time: 15s                  # Interval of how often the power is updated
   #------------------------------
-  current_cal_20a: '11143'      #  20A/25mA SCT-006 CT Clamp | was '11143'
+  current_cal_20a: '11143'      #  20A/25mA SCT-006 CT | *** NEED TO CALIBRATE ***
   #------------------------------
-  current_cal_100a: '28235'     # 100A/50ma SCT-013 CT Clamp | was '27518'
+  current_cal_100a: '28235'     # 100A/50ma SCT-013 CT | My Calibration values.
   #------------------------------
-  voltage_cal: '7484'           # Jameco 9vac Transf #157041 on board 1.4.1 | was '7305'
+  voltage_cal: '7484'           # Jameco #157041 / hw 1.4r1 | My Calibration values.
 
-
-#esphome:
-#  name: "${device_name}"
-#  build_path: "./builds/${device_name}"
-#  friendly_name: "${disp_name}"
-#  project:
-#    name: circuitsetup.6c-energy-meter-main
-#    version: "1.4.1"
-#  platformio_options:
-#    build_flags: 
-#      - -DCONFIG_ARDUINO_LOOP_STACK_SIZE=32768
-#
-#esp32:
-#  #board: esp32dev
-#  board: nodemcu-32s
-#  framework:
-#    type: arduino
-#
-#dashboard_import:
-#  package_import_url: github://circuitsetup/Expandable-6-Channel-ESP32-Energy-Meter/Software/ESPHome/6chan_energy_meter_main_board.yaml@master
-#  import_full_config: true
 
 esphome:
   name: "${device_name}"
+  build_path: "./builds/${device_name}"
+  friendly_name: "${friendly_name}"
+  #project:
+  #  name: circuitsetup.6c-energy-meter-main
+  #  version: "1.4.1"
   platformio_options:
     build_flags: 
       - -DCONFIG_ARDUINO_LOOP_STACK_SIZE=32768
@@ -70,6 +55,11 @@ esp32:
     source: https://github.com/espressif/arduino-esp32.git#2.0.2
     platform_version: https://github.com/platformio/platform-espressif32.git#feature/arduino-upstream
 
+#dashboard_import:
+#  package_import_url: github://circuitsetup/Expandable-6-Channel-ESP32-Energy-Meter/Software/ESPHome/6chan_energy_meter_main_board.yaml@master
+#  import_full_config: true
+
+
 #------------------------------
 # Sets up Bluetooth LE to allow the user to provision wifi credentials to the device.
 esp32_improv:
@@ -81,7 +71,7 @@ packages:
   captive_portal: !include common/packages/captive_portal.yaml
   logger: !include common/packages/logger.yaml
   ota: !include common/packages/ota.yaml
-#  time: !include common/packages/time.yaml
+  #time: !include common/packages/time.yaml
   web_server: !include common/packages/web_server.yaml
   wifi: !include common/packages/wifi.yaml  
 
@@ -102,7 +92,7 @@ sensor:
   #- <<: !include common/sensor/uptime.config.yaml
   - platform: uptime
     name: "${friendly_name} Uptime"
-    id: ${base_id}_uptime                 # Must use underscore
+    id: ${base_id}_uptime                       # Must use underscore
     filters:
       - lambda: return x / 3600;
     unit_of_measurement: "hours"
